@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
-from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS
+from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL
 import json
 import redis
 from flask_redis import FlaskRedis
@@ -15,7 +15,7 @@ redis_conn = redis.Redis(host='localhost', port=6379, db=0)
 #Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
-app.config['REDIS_URL'] = 'redis://localhost:6379/0'
+app.config['REDIS_URL'] = REDIS_URL
 
 db = SQLAlchemy(app)
 
