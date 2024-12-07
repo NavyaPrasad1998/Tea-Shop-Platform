@@ -3,9 +3,12 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
 from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS
+import redis 
+
 
 app = Flask(__name__)
-
+# Redis Connection
+redis_conn = redis.Redis(host='localhost', port=6379, db=0)
 #Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
@@ -41,6 +44,38 @@ class Product(db.Model):
     def __repr__(self):
         return f'<Product {self.name}>'
 
+class Recommendation(db.Model):
+    recommendation_id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
+    recommended_product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    def __repr__(self):
+        return f'<Recommendation {self.recommendation_id}>'
+
+class Subscription(db.Model):
+    subscription_id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'))
+    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
+    frequency = db.Column(db.String(50))
+    quantity = db.Column(db.Integer)
+    status = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    def __repr__(self):
+        return f'<Subscription {self.subscription_id}>'
+
+class ChatMessage(db.Model):
+    chat_message_id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'))
+    message = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    def __repr__(self):
+        return f'<ChatMessage {self.chat_message_id}>'
 
 #API Routes
 
@@ -58,7 +93,9 @@ def register():
         return jsonify({'message': 'Email already exists'}), 400
 
     hashed_password = generate_password_hash(password)
-    new_user = User(name=name, email=email, password_hash=hashed_password)
+    phone_number = data.get('phone_number')
+    shipping_address = data.get('shipping_address')
+    new_user = User(name=name, email=email, password_hash=hashed_password, phone_number=phone_number, shipping_address=shipping_address)
     db.session.add(new_user)
     db.session.commit()
     return jsonify({'message': 'User registered successfully'}), 201
@@ -69,7 +106,6 @@ def login():
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
-
     user = User.query.filter_by(email=email).first()
 
     if not user or not check_password_hash(user.password_hash, password):
@@ -83,10 +119,21 @@ def profile():
     if request.method == 'GET':
         data = request.get_json()
         email = data.get('email')
+        cached_user = redis_conn.get(f'user_profile:{email}')
+        if cached_user:
+            return jsonify(cached_user), 200
         user = User.query.filter_by(email=email).first()
 
         if not user:
             return jsonify({'message': 'User not found'}), 404
+        
+        # Cache the user profile with expiry time of 1 hour
+        redis_conn.setex(f'user_profile:{email}', 3600, jsonify({
+            'name': user.name,
+            'email': user.email,
+            'phone_number': user.phone_number,
+            'shipping_address': user.shipping_address
+        }))
 
         return jsonify({
             'name': user.name,
@@ -132,29 +179,45 @@ def reset_password():
 #Get all products
 @app.route('/products', methods=['GET'])
 def get_products():
+    cached_projets = redis_conn.get('products')
+    if cached_projets:
+        print("Cached Products")
+        return jsonify(cached_projets), 200
     products = Product.query.all()
-    return jsonify([{
+    products_data = [{
         'product_id': product.product_id,
         'name': product.name,
         'price': product.price,
         'category': product.category,
         'image_url': product.image_url
-    } for product in products]), 200
+    } for product in products]
+    # Cache the products with expiry time of 1 hour
+    redis_conn.setex('products', 3600, jsonify(products_data))
+    return jsonify(products_data), 200
 
 #Get product by id
 @app.route('/products/<int:product_id>', methods=['GET'])
 def get_product(product_id):
+    cached_product = redis_conn.get(f'product:{product_id}')
+    if cached_product:
+        print("Cached Product")
+        return jsonify(cached_product), 200
     product = Product.query.get(product_id)
     if not product:
         return jsonify({'message': 'Product not found'}), 404
 
-    return jsonify({
+    product_data = {
         'product_id': product.product_id,
         'name': product.name,
         'price': product.price,
         'category': product.category,
         'image_url': product.image_url
-    }), 200
+    }
+    # Cache the product with expiry time of 1 hour
+    redis_conn.setex(f'product:{product_id}', 3600, jsonify(product_data))
+
+
+    return jsonify(product_data), 200
 
 #Add new product
 @app.route('/products', methods=['POST'])
@@ -189,6 +252,205 @@ def update_product(product_id):
 
     db.session.commit()
     return jsonify({'message': 'Product updated successfully'}), 200
+
+#Delete product
+@app.route('/products/<int:product_id>', methods=['DELETE'])
+def delete_product(product_id):
+    product = Product.query.get(product_id)
+    if not product:
+        return jsonify({'message': 'Product not found'}), 404
+
+    db.session.delete(product)
+    db.session.commit()
+    return jsonify({'message': 'Product deleted successfully'}), 200
+
+
+#Recommendation API
+@app.route('/recommendations', methods=['GET'])
+def get_recommendations():
+    products = Product.query.all()
+    return jsonify([{
+        'product_id': product.product_id,
+        'name': product.name,
+        'price': product.price,
+        'category': product.category,
+        'image_url': product.image_url
+    } for product in products]), 200
+
+#Update Recommendation API
+@app.route('/recommendations', methods=['PUT'])
+def update_recommendations():
+    data = request.get_json()
+    product_ids = data.get('product_ids')
+
+    # Perform recommendation logic here
+    # For example, fetch products similar to the ones provided in product_ids
+    # and return the recommended products
+
+
+    return jsonify({'message': 'Recommendations updated successfully'}), 200
+
+
+#Subscription APIs
+#Subscribe to a product
+@app.route('/subscribe', methods=['POST'])
+def subscribe():
+    data = request.get_json()
+    email = data.get('email')
+    product_id = data.get('product_id')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    product = Product.query.get(product_id)
+    if not product:
+        return jsonify({'message': 'Product not found'}), 404
+
+    new_subscription = Subscription(user_id=user.user_id, product_id=product_id)
+    db.session.add(new_subscription)
+    db.session.commit()
+    return jsonify({'message': 'Subscribed successfully'}), 201
+
+#Get subscriptions for a user
+@app.route('/subscriptions', methods=['GET'])
+def get_subscriptions():
+    data = request.get_json()
+    email = data.get('email')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    subscriptions = Subscription.query.filter_by(user_id=user.user_id).all()
+    return jsonify([{
+        'subscription_id': subscription.subscription_id,
+        'product_id': subscription.product_id
+    } for subscription in subscriptions]), 200
+
+#Unsubscribe from a product: update status to cancelled
+@app.route('/unsubscribe', methods=['POST'])
+def unsubscribe():
+    data = request.get_json()
+    email = data.get('email')
+    product_id = data.get('product_id')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    subscription = Subscription.query.filter_by(user_id=user.user_id, product_id=product_id).first()
+    if not subscription:
+        return jsonify({'message': 'Subscription not found'}), 404
+
+    subscription.status = 'cancelled'
+    db.session.commit()
+    return jsonify({'message': 'Unsubscribed successfully'}), 200
+
+
+#Update Subscription API
+@app.route('/subscriptions', methods=['PUT'])
+def update_subscriptions():
+    data = request.get_json()
+    email = data.get('email')
+    product_id = data.get('product_id')
+    frequency = data.get('frequency')
+    quantity = data.get('quantity')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    subscription = Subscription.query.filter_by(user_id=user.user_id, product_id=product_id).first()
+    if not subscription:
+        return jsonify({'message': 'Subscription not found'}), 404
+
+    subscription.frequency = frequency
+    subscription.quantity = quantity
+
+    db.session.commit()
+    return jsonify({'message': 'Subscription updated successfully'}), 200
+
+#Get Subscription status: Active, Paused, Cancelled
+@app.route('/subscription-status', methods=['GET'])
+def get_subscription_status():
+    data = request.get_json()
+    email = data.get('email')
+    product_id = data.get('product_id')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    subscription = Subscription.query.filter_by(user_id=user.user_id, product_id=product_id).first()
+    if not subscription:
+        return jsonify({'message': 'Subscription not found'}), 404
+
+    return jsonify({'status': subscription.status}), 200
+
+#Get Subscription history
+@app.route('/subscription-history', methods=['GET'])
+def get_subscription_history():
+    data = request.get_json()
+    email = data.get('email')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    subscriptions = Subscription.query.filter_by(user_id=user.user_id).all()
+    return jsonify([{
+        'subscription_id': subscription.subscription_id,
+        'product_id': subscription.product_id,
+        'status': subscription.status
+    } for subscription in subscriptions]), 200
+
+
+#Live Chat APIs
+# Chatbot APIs
+@app.route('/chatbot', methods=['POST'])
+def chatbot():
+    data = request.get_json()
+    message = data.get('message')
+
+    # Perform chatbot logic here
+    # For example, process the message and return a response
+
+    return jsonify({'message': 'Chatbot response'}), 200
+
+#User Chat APIs
+#Send message
+@app.route('/send-message', methods=['POST'])
+def send_message():
+    data = request.get_json()
+    email = data.get('email')
+    message = data.get('message')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    new_message = ChatMessage(user_id=user.user_id, message=message)
+    db.session.add(new_message)
+    db.session.commit()
+    return jsonify({'message': 'Message sent successfully'}), 201
+
+#Get messages for a user
+@app.route('/messages', methods=['GET'])
+def get_messages():
+    data = request.get_json()
+    email = data.get('email')
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    messages = ChatMessage.query.filter_by(user_id=user.user_id).all()
+    return jsonify([{
+        'chat_message_id': message.chat_message_id,
+        'message': message.message
+    } for message in messages]), 200
+    
 
 
 if __name__ == "__main__":    
