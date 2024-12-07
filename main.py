@@ -3,7 +3,10 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
 from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS
-import redis 
+import json
+import redis
+from flask_redis import FlaskRedis
+from redis import Redis 
 
 
 app = Flask(__name__)
@@ -12,8 +15,12 @@ redis_conn = redis.Redis(host='localhost', port=6379, db=0)
 #Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
+app.config['REDIS_URL'] = 'redis://localhost:6379/0'
 
 db = SQLAlchemy(app)
+
+# Initialize Redis instance
+redis = FlaskRedis(app)
 
 #Database Model
 class User(db.Model):
@@ -121,14 +128,14 @@ def profile():
         email = data.get('email')
         cached_user = redis_conn.get(f'user_profile:{email}')
         if cached_user:
-            return jsonify(cached_user), 200
+            return jsonify(json.loads(cached_user)), 200
         user = User.query.filter_by(email=email).first()
 
         if not user:
             return jsonify({'message': 'User not found'}), 404
         
         # Cache the user profile with expiry time of 1 hour
-        redis_conn.setex(f'user_profile:{email}', 3600, jsonify({
+        redis_conn.setex(f'user_profile:{email}', 3600, json.dumps({
             'name': user.name,
             'email': user.email,
             'phone_number': user.phone_number,
@@ -182,7 +189,7 @@ def get_products():
     cached_projets = redis_conn.get('products')
     if cached_projets:
         print("Cached Products")
-        return jsonify(cached_projets), 200
+        return jsonify(json.loads(cached_projets)), 200
     products = Product.query.all()
     products_data = [{
         'product_id': product.product_id,
@@ -192,7 +199,7 @@ def get_products():
         'image_url': product.image_url
     } for product in products]
     # Cache the products with expiry time of 1 hour
-    redis_conn.setex('products', 3600, jsonify(products_data))
+    redis_conn.setex('products', 3600, json.dumps(products_data))
     return jsonify(products_data), 200
 
 #Get product by id
@@ -201,7 +208,7 @@ def get_product(product_id):
     cached_product = redis_conn.get(f'product:{product_id}')
     if cached_product:
         print("Cached Product")
-        return jsonify(cached_product), 200
+        return jsonify(json.loads(cached_product)), 200
     product = Product.query.get(product_id)
     if not product:
         return jsonify({'message': 'Product not found'}), 404
@@ -214,10 +221,27 @@ def get_product(product_id):
         'image_url': product.image_url
     }
     # Cache the product with expiry time of 1 hour
-    redis_conn.setex(f'product:{product_id}', 3600, jsonify(product_data))
+    redis_conn.setex(f'product:{product_id}', 3600, json.dumps(product_data))
 
 
     return jsonify(product_data), 200
+
+@app.route('/view-product/<int:product_id>', methods=['POST'])
+def view_product(product_id):
+    email = request.get_json().get('email')
+    
+    # Get the user from the database
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+    
+    # Track the viewed product in Redis
+    redis_conn.sadd(f"user:{user.user_id}:viewed_products", product_id)
+    
+    # Return a success message
+    return jsonify({'message': f'Product {product_id} viewed successfully'}), 200
+
+
 
 #Add new product
 @app.route('/products', methods=['POST'])
@@ -268,27 +292,38 @@ def delete_product(product_id):
 #Recommendation API
 @app.route('/recommendations', methods=['GET'])
 def get_recommendations():
-    products = Product.query.all()
-    return jsonify([{
+    email = request.args.get('email')
+    cached_recommendations = redis_conn.get(f"user:{email}:recommendations")
+    
+    if cached_recommendations:
+        return jsonify(eval(cached_recommendations)), 200  # Return cached recommendations
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    viewed_product_ids = redis_conn.smembers(f"user:{user.user_id}:viewed_products")
+    
+    if not viewed_product_ids:
+        return jsonify({'message': 'No viewed products found'}), 404
+    
+    viewed_product_ids = [int(product_id) for product_id in viewed_product_ids]
+    viewed_products = Product.query.filter(Product.product_id.in_(viewed_product_ids)).all()
+    viewed_categories = set(product.category for product in viewed_products)
+    recommended_products = Product.query.filter(Product.category.in_(viewed_categories)).filter(Product.product_id.notin_(viewed_product_ids)).limit(5).all()
+    recommendations = [{
         'product_id': product.product_id,
         'name': product.name,
         'price': product.price,
         'category': product.category,
         'image_url': product.image_url
-    } for product in products]), 200
-
-#Update Recommendation API
-@app.route('/recommendations', methods=['PUT'])
-def update_recommendations():
-    data = request.get_json()
-    product_ids = data.get('product_ids')
-
-    # Perform recommendation logic here
-    # For example, fetch products similar to the ones provided in product_ids
-    # and return the recommended products
+    } for product in recommended_products]
+    
+    # Cache the recommendations in Redis for 1 hour (3600 seconds)
+    redis_conn.setex(f"user:{email}:recommendations", 3600, str(recommendations))
+    
+    return jsonify(recommendations), 200
 
 
-    return jsonify({'message': 'Recommendations updated successfully'}), 200
 
 
 #Subscription APIs
