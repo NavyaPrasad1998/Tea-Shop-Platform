@@ -199,7 +199,7 @@ useEffect(() => {
                     </Box>
 
                     {/* Other Menu Items */}
-                    {['Teaware', 'Gifts', 'Lose Leaves', 'About'].map((item) => (
+                    {['Teaware', 'Gifts', 'Loose Leaves', 'About'].map((item) => (
                         <Box
                             key={item}
                             sx={{
