@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, session
+from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
@@ -10,6 +11,12 @@ from redis import Redis
 
 
 app = Flask(__name__)
+
+#CORS 
+# Enable CORS for React frontend running at localhost:3000
+CORS(app, origins="http://localhost:3000")  # Adjust based on your frontend URL
+
+
 # Redis Connection
 redis_conn = redis.Redis(host='localhost', port=6379, db=0)
 #Database Configuration
