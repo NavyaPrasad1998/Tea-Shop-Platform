@@ -493,6 +493,42 @@ def get_messages():
         'message': message.message
     } for message in messages]), 200
     
+# Product Search thru search tab API
+#eg : http://127.0.0.1:5000/search?q=masala+chai
+@app.route('/search', methods=['GET'])
+def search_products():
+    query = request.args.get('q')
+    
+    if not query:
+        return jsonify({'message': 'No query provided'}), 400
+
+    # Check if the search results are cached in Redis
+    cached_results = redis_conn.get(f"search_results:{query}")
+    if cached_results:
+        print("Returning cached search results")
+        return jsonify(json.loads(cached_results)), 200
+
+    # Perform search in the database (case-insensitive)
+    results = Product.query.filter(
+        Product.name.ilike(f'%{query}%') | 
+        Product.description.ilike(f'%{query}%') | 
+        Product.category.ilike(f'%{query}%')
+    ).all()
+
+    # Prepare the results to return
+    search_results = [{
+        'product_id': product.product_id,
+        'name': product.name,
+        'description': product.description,
+        'price': product.price,
+        'category': product.category,
+        'image_url': product.image_url
+    } for product in results]
+
+    # Cache the search results with an expiration time of 1 hour (3600 seconds)
+    redis_conn.setex(f"search_results:{query}", 3600, json.dumps(search_results))
+
+    return jsonify(search_results), 200
 
 
 if __name__ == "__main__":    
