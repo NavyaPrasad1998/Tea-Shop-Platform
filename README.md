@@ -73,11 +73,15 @@ This will start the Flask application on http://127.0.0.1:5000/
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 In the project directory, you can run:
-## `npm install`
+```bash
+npm install
+```
 
 Run this first to get Node Modules
 
-## `npm start`
+```bash
+npm start
+```
 
 Runs the app in the development mode.\
 Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
