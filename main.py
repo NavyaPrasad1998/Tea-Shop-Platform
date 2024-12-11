@@ -294,6 +294,7 @@ def update_product(product_id):
         return jsonify({'message': 'Product not found'}), 404
 
     data = request.get_json()
+    product.id = data.get('product_id')
     product.name = data.get('name')
     product.description = data.get('description')
     product.price = data.get('price')
@@ -302,6 +303,8 @@ def update_product(product_id):
     product.stock_quantity = data.get('stock_quantity')
 
     db.session.commit()
+    # delete the cached product
+    redis_conn.delete(f'product:{product_id}')
     return jsonify({'message': 'Product updated successfully'}), 200
 
 #Delete product
@@ -313,6 +316,8 @@ def delete_product(product_id):
 
     db.session.delete(product)
     db.session.commit()
+    # delete the cached product
+    redis_conn.delete(f'product:{product_id}')
     return jsonify({'message': 'Product deleted successfully'}), 200
 
 
