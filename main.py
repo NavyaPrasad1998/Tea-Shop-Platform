@@ -20,6 +20,8 @@ app = Flask(__name__)
 CORS(app, origins="http://localhost:3000")  # Adjust based on your frontend URL
 
 
+
+
 # Redis Connection
 redis_conn = redis.Redis(host='localhost', port=6379, db=0)
 #Database Configuration

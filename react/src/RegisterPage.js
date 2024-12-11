@@ -1,6 +1,5 @@
 import React, {useState} from 'react';
 import { Box, TextField, Button, Typography, Link, Alert } from '@mui/material';
-import Logo from './assets/logo-png.png';
 import { useNavigate } from 'react-router-dom';
 import { Link as RouterLink } from 'react-router-dom';
 import axios from 'axios';
@@ -41,6 +40,7 @@ function RegisterPage() {
     return (
         <Box className="register-container">
             <Box className="register-box">
+            <img src="/images/logo-png.png" style={{height: '120px'}} alt="Logo" className="login-logo" />
             <div style={{fontFamily: 'Arial', fontSize: '24px', fontWeight: 'bold', color: '#454B1B'}}>Create Account</div>
                 {message && (
                     <Alert severity={error ? 'error' : 'success'} style={{ marginTop: '10px' }}>

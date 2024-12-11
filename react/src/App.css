@@ -191,3 +191,8 @@
   font-weight: bold;
   /* text-decoration: underline;  */
 }
+
+/* Reduce the height and width of the chatbot */
+df-messenger .df-messenger-wrapper div.chat-wrapper[opened="true"]{
+  height: 350px !important;
+}

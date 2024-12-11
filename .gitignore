@@ -3,3 +3,5 @@ dump.rdb
 react/node_modules
 Navya.code-workspace
 .venv/
+.DS_Store
+images/.DS_Store
