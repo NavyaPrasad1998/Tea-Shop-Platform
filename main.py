@@ -5,7 +5,7 @@ from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
 from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
-from model import User, Product, Subscription, ChatMessage, Recommendation, db
+from model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, db
 import json
 import redis
 from flask_redis import FlaskRedis
@@ -48,6 +48,11 @@ s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 
 
 #API Routes
+
+
+@app.route('/health', methods=['GET'])
+def get_health():
+    return "working", 200
 
 # User Management APIs
 
@@ -544,6 +549,65 @@ def search_products():
     redis_conn.setex(f"search_results:{query}", 3600, json.dumps(search_results))
 
     return jsonify(search_results), 200
+
+
+#cart apis
+@app.route('/cart/add', methods=['POST'])
+def add_to_cart():
+    data = request.get_json()
+    user_id = data.get('user_id')
+    product_id = data.get('product_id')
+    quantity = data.get('quantity', 1)
+
+    # Check if the user has a cart, create if not
+    cart = Cart.query.filter_by(user_id=user_id).first()
+    if not cart:
+        cart = Cart(user_id=user_id)
+        db.session.add(cart)
+        db.session.commit()
+
+    # Check if the item is already in the cart
+    cart_item = CartItem.query.filter_by(cart_id=cart.cart_id, product_id=product_id).first()
+    if cart_item:
+        cart_item.quantity += quantity
+    else:
+        new_item = CartItem(cart_id=cart.cart_id, product_id=product_id, quantity=quantity)
+        db.session.add(new_item)
+
+    db.session.commit()
+    return jsonify({'message': 'Item added to cart successfully'}), 201
+
+@app.route('/cart/<int:user_id>', methods=['GET'])
+def view_cart(user_id):
+    cart = Cart.query.filter_by(user_id=user_id).first()
+    if not cart or not cart.items:
+        return jsonify({'message': 'Cart is empty'}), 200
+
+    cart_items = []
+    for item in cart.items:
+        cart_items.append({
+            'cart_item_id': item.cart_item_id,
+            'product_id': item.product_id,
+            'product_name': item.product.name,
+            'quantity': item.quantity,
+            'price': item.product.price,
+            'total_price': item.quantity * item.product.price
+        })
+
+    return jsonify({'cart_id': cart.cart_id, 'items': cart_items}), 200
+
+@app.route('/cart/remove', methods=['DELETE'])
+def remove_from_cart():
+    data = request.get_json()
+    cart_item_id = data.get('cart_item_id')
+
+    cart_item = CartItem.query.get(cart_item_id)
+    if not cart_item:
+        return jsonify({'message': 'Cart item not found'}), 404
+
+    db.session.delete(cart_item)
+    db.session.commit()
+    return jsonify({'message': 'Item removed from cart successfully'}), 200
 
 
 if __name__ == "__main__":    

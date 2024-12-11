@@ -63,3 +63,29 @@ class ChatMessage(db.Model):
 
     def __repr__(self):
         return f'<ChatMessage {self.chat_message_id}>'
+    
+class Cart(db.Model):
+    cart_id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    user = db.relationship('User', backref=db.backref('cart', lazy=True))
+
+    def __repr__(self):
+        return f'<Cart {self.cart_id}>'
+
+class CartItem(db.Model):
+    cart_item_id = db.Column(db.Integer, primary_key=True)
+    cart_id = db.Column(db.Integer, db.ForeignKey('cart.cart_id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    cart = db.relationship('Cart', backref=db.backref('items', lazy=True))
+    product = db.relationship('Product')
+
+    def __repr__(self):
+        return f'<CartItem {self.cart_item_id}>'
+
