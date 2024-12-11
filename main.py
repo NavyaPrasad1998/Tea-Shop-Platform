@@ -1,18 +1,21 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
-from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL
+from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
+from model import User, Product, Subscription, ChatMessage, Recommendation, db
 import json
 import redis
 from flask_redis import FlaskRedis
 from redis import Redis 
+from itsdangerous import URLSafeTimedSerializer
 
 
 app = Flask(__name__)
 
-#CORS 
+
 # Enable CORS for React frontend running at localhost:3000
 CORS(app, origins="http://localhost:3000")  # Adjust based on your frontend URL
 
@@ -24,72 +27,25 @@ app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
 app.config['REDIS_URL'] = REDIS_URL
 
-db = SQLAlchemy(app)
+# init SQLAlchemy
+db.init_app(app)
 
 # Initialize Redis instance
 redis = FlaskRedis(app)
 
-#Database Model
-class User(db.Model):
-    user_id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
-    phone_number = db.Column(db.String(15))
-    shipping_address = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=db.func.now())
-    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+# Flask Mail Setup
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 465
+app.config['MAIL_USERNAME'] = MAIL_USERNAME
+app.config['MAIL_PASSWORD'] = MAIL_PASSWORD
+app.config['MAIL_USE_TLS'] = False
+app.config['MAIL_USE_SSL'] = True
+mail = Mail(app)
 
-    def __repr__(self):
-        return f'<User {self.name}>'
+# Secret key for generating tokens
+app.config['SECRET_KEY'] = SECRET_KEY
+s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 
-
-class Product(db.Model):
-    product_id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.String(500))
-    price = db.Column(db.Float, nullable=False)
-    category = db.Column(db.String(100))
-    image_url = db.Column(db.String(200))
-    stock_quantity = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=db.func.now())
-    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
-
-    def __repr__(self):
-        return f'<Product {self.name}>'
-
-class Recommendation(db.Model):
-    recommendation_id = db.Column(db.Integer, primary_key=True)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
-    recommended_product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
-    created_at = db.Column(db.DateTime, default=db.func.now())
-    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
-
-    def __repr__(self):
-        return f'<Recommendation {self.recommendation_id}>'
-
-class Subscription(db.Model):
-    subscription_id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'))
-    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'))
-    frequency = db.Column(db.String(50))
-    quantity = db.Column(db.Integer)
-    status = db.Column(db.String(50))
-    created_at = db.Column(db.DateTime, default=db.func.now())
-    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
-
-    def __repr__(self):
-        return f'<Subscription {self.subscription_id}>'
-
-class ChatMessage(db.Model):
-    chat_message_id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.user_id'))
-    message = db.Column(db.String(500))
-    created_at = db.Column(db.DateTime, default=db.func.now())
-    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
-
-    def __repr__(self):
-        return f'<ChatMessage {self.chat_message_id}>'
 
 #API Routes
 
@@ -126,6 +82,81 @@ def login():
         return jsonify({'message': 'Invalid credentials'}), 400
 
     return jsonify({'message': 'Login successful'}), 200
+
+@app.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+    
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+    
+    
+    token = s.dumps(email, salt='reset-password')  # 24 hours
+
+    # need to replace with  frontend URL
+    reset_link = f"http://localhost:3000/reset-password/{token}"
+
+    redis_conn.setex(f"reset_token:{token}", 86400, "valid")
+
+    
+    message_body = f"""
+    Hi {user.name},
+    
+    Did you mean to reset the password linked to this account? If you did, please proceed to change your password by clicking the link below:
+    {reset_link}
+
+    Please note that this temporary link expires after 24 hours.
+
+    If you had no intention of changing your password, simply ignore this email. Rest assured your account is safe.
+
+    Regards,
+    The Tearoma team
+    """
+
+    msg = Message(
+        'Password Reset Request',
+        sender= MAIL_USERNAME,
+        recipients=[email]
+    )
+    msg.body = message_body
+    
+    try:
+        mail.send(msg)
+        return jsonify({'message': 'Password reset email sent successfully'}), 200
+    except Exception as e:
+        return jsonify({'message': 'Failed to send email', 'error': str(e)}), 500
+
+
+@app.route('/reset-password/<token>', methods=['POST'])
+def reset_password(token):
+    data = request.get_json()
+    new_password = data.get('new_password')
+    
+    try:
+        email = s.loads(token, salt='reset-password', max_age= 86400)  # Token is valid for 24 hours
+
+        # Check if the token is valid in Redis
+        token_status = redis_conn.get(f"reset_token:{token}")
+        if not token_status or token_status.decode() != "valid":
+            return jsonify({'message': 'The reset link is invalid or expired'}), 400
+
+        redis_conn.delete(f"reset_token:{token}")
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return jsonify({'message': 'User not found'}), 404
+
+        user.password_hash = generate_password_hash(new_password)
+        db.session.commit()
+
+        return jsonify({'message': 'Password successfully reset'}), 200
+    
+    except Exception as e:
+        return jsonify({'message': 'The reset link is invalid or expired', 'error': str(e)}), 400
+
 
 #Profile management - view and update user profile
 @app.route('/profile', methods=['GET', 'PUT'])
@@ -171,22 +202,6 @@ def profile():
         db.session.commit()
         return jsonify({'message': 'Profile updated successfully'}), 200
        
-#Password Reset
-@app.route('/reset-password', methods=['POST'])
-def reset_password():
-    data = request.get_json()
-    email = data.get('email')
-    old_password = data.get('old_password')
-    new_password = data.get('new_password')
-
-    user = User.query.filter_by(email=email).first()
-
-    if not user or not check_password_hash(user.password_hash, old_password):
-        return jsonify({'message': 'Invalid credentials'}), 400
-
-    user.password_hash = generate_password_hash(new_password)
-    db.session.commit()
-    return jsonify({'message': 'Password reset successful '}), 200
 
 #Product Management APIs
 
