@@ -89,3 +89,17 @@ class CartItem(db.Model):
     def __repr__(self):
         return f'<CartItem {self.cart_item_id}>'
 
+
+#Table for best selling products
+class BestSeller(db.Model):
+    best_seller_id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.product_id'), nullable=False)
+    quantity_sold = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    product = db.relationship('Product')
+
+    def __repr__(self):
+        return f'<BestSeller {self.best_seller_id}>'
+

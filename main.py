@@ -5,7 +5,7 @@ from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
 from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
-from model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, db
+from model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, BestSeller, db
 import json
 import redis
 from flask_redis import FlaskRedis
@@ -135,10 +135,11 @@ def forgot_password():
         return jsonify({'message': 'Failed to send email', 'error': str(e)}), 500
 
 
-@app.route('/reset-password/<token>', methods=['POST'])
-def reset_password(token):
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
     data = request.get_json()
-    new_password = data.get('new_password')
+    new_password = data.get('password')
+    token = data.get('token')
     
     try:
         email = s.loads(token, salt='reset-password', max_age= 86400)  # Token is valid for 24 hours
@@ -614,6 +615,108 @@ def remove_from_cart():
     db.session.commit()
     return jsonify({'message': 'Item removed from cart successfully'}), 200
 
+
+@app.route('/best-sellers', methods=['GET'])
+def get_best_sellers():
+    cached_best_sellers = redis_conn.get('best_sellers')
+    if cached_best_sellers:
+        print("Cached Best Sellers")
+        return jsonify(json.loads(cached_best_sellers)), 200
+    best_sellers = BestSeller.query.all()
+    best_sellers_data = [{
+        'product_id': best_seller.product_id,
+        'name': best_seller.product.name,
+        'price': best_seller.product.price,
+        'category': best_seller.product.category,
+        'image_url': best_seller.product.image_url,
+        'quantity_sold': best_seller.quantity_sold
+    } for best_seller in best_sellers]
+    # Cache the best sellers with expiry time of 1 hour
+    redis_conn.setex('best_sellers', 3600, json.dumps(best_sellers_data))
+    return jsonify(best_sellers_data), 200
+
+@app.route('/best-sellers', methods=['POST'])
+def add_best_seller():
+    data = request.get_json()
+    product_id = data.get('product_id')
+    quantity_sold = data.get('quantity_sold')
+
+    product = Product.query.get(product_id)
+    if not product:
+        return jsonify({'message': 'Product not found'}), 404
+
+    new_best_seller = BestSeller(product_id=product_id, quantity_sold=quantity_sold)
+    db.session.add(new_best_seller)
+    db.session.commit()
+    return jsonify({'message': 'Best seller added successfully'}), 201
+
+#get top 4 best sellers
+@app.route('/best-sellers/top', methods=['GET'])
+def get_top_best_sellers():
+    best_sellers = BestSeller.query.order_by(BestSeller.quantity_sold.desc()).limit(4).all()
+    best_sellers_data = [{
+        'product_id': best_seller.product_id,
+        'name': best_seller.product.name,
+        'price': best_seller.product.price,
+        'category': best_seller.product.category,
+        'image_url': best_seller.product.image_url,
+        'quantity_sold': best_seller.quantity_sold
+    } for best_seller in best_sellers]
+    return jsonify(best_sellers_data), 200
+    
+
+
+#Get all Teas
+@app.route('/teas', methods=['GET'])
+def get_teas():
+    teas = Product.query.filter_by(category='Tea').all()
+    teas_data = [{
+        'product_id': tea.product_id,
+        'name': tea.name,
+        'price': tea.price,
+        'category': tea.category,
+        'image_url': tea.image_url
+    } for tea in teas]
+    return jsonify(teas_data), 200
+
+#Get all snacks
+@app.route('/snacks', methods=['GET'])
+def get_snacks():
+    snacks = Product.query.filter_by(category='Snack').all()
+    snacks_data = [{
+        'product_id': snack.product_id,
+        'name': snack.name,
+        'price': snack.price,
+        'category': snack.category,
+        'image_url': snack.image_url
+    } for snack in snacks]
+    return jsonify(snacks_data), 200
+
+#Get all Teaware
+@app.route('/teaware', methods=['GET'])
+def get_teaware():
+    teaware = Product.query.filter_by(category='Teaware').all()
+    teaware_data = [{
+        'product_id': teaware.product_id,
+        'name': teaware.name,
+        'price': teaware.price,
+        'category': teaware.category,
+        'image_url': teaware.image_url
+    } for teaware in teaware]
+    return jsonify(teaware_data), 200
+
+#Get all Tealeaves
+@app.route('/tealeaves', methods=['GET'])
+def get_tealeaves():
+    tealeaves = Product.query.filter_by(category='Tealeaves').all()
+    tealeaves_data = [{
+        'product_id': tealeaves.product_id,
+        'name': tealeaves.name,
+        'price': tealeaves.price,
+        'category': tealeaves.category,
+        'image_url': tealeaves.image_url
+    } for tealeaves in tealeaves]
+    return jsonify(tealeaves_data), 200
 
 if __name__ == "__main__":    
     with app.app_context():
