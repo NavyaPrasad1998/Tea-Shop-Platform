@@ -4,8 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
-from src.main.config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
-from src.main.model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, BestSeller, db
+from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
+from model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, BestSeller, db
 import json
 import redis
 from flask_redis import FlaskRedis
@@ -17,13 +17,13 @@ app = Flask(__name__)
 
 
 # Enable CORS for React frontend running at localhost:3000
-CORS(app, origins="http://localhost:3000")  # Adjust based on your frontend URL
+CORS(app, origins="http://127.0.0.1:3000")  # Adjust based on your frontend URL
 
 
 
 
 # Redis Connection
-redis_conn = redis.Redis(host='localhost', port=6379, db=0)
+redis_conn = redis.Redis(host='10.0.0.3', port=6379, db=0)
 #Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
@@ -216,10 +216,10 @@ def profile():
 #Get all products
 @app.route('/products', methods=['GET'])
 def get_products():
-    cached_projets = redis_conn.get('products')
-    if cached_projets:
-        print("Cached Products")
-        return jsonify(json.loads(cached_projets)), 200
+    # cached_projets = redis_conn.get('products')
+    # if cached_projets:
+    #     print("Cached Products")
+    #     return jsonify(json.loads(cached_projets)), 200
     products = Product.query.all()
     products_data = [{
         'product_id': product.product_id,
@@ -229,7 +229,7 @@ def get_products():
         'image_url': product.image_url
     } for product in products]
     # Cache the products with expiry time of 1 hour
-    redis_conn.setex('products', 3600, json.dumps(products_data))
+    # redis_conn.setex('products', 3600, json.dumps(products_data))
     return jsonify(products_data), 200
 
 #Get product by id
@@ -723,4 +723,6 @@ def get_tealeaves():
 if __name__ == "__main__":    
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    # app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
+    
