@@ -4,8 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
-from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
-from model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, BestSeller, db
+from src.main.config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
+from src.main.model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, BestSeller, db
 import json
 import redis
 from flask_redis import FlaskRedis
