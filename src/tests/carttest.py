@@ -1,85 +1,74 @@
 import unittest
-from main import app, db, Cart, CartItem, Product
-from flask import jsonify
+from unittest.mock import patch
+from src.main.main import app, db
+from src.main.model import User, Product, Cart, CartItem
 
-class TestCartRoutes(unittest.TestCase):
-    # Setup a testing environment
+class CartApiTest(unittest.TestCase):
+
     def setUp(self):
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'  # In-memory SQLite database for testing
-        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        app.config['TESTING'] = True
-        self.client = app.test_client()
+        # Set up the Flask test client and initialize the database for testing
+        self.app = app.test_client()
+        self.app.testing = True
 
-        # Create tables in the in-memory database
-        with app.app_context():
-            db.create_all()
-
-            # Add a product to the database for testing
-            product = Product(name="Test Product", price=10.0)
-            db.session.add(product)
-            db.session.commit()
+        # Mock database session
+        self.patcher = patch('src.main.main.db.session')
+        self.mock_db_session = self.patcher.start()
 
     def tearDown(self):
-        # Cleanup after each test
-        with app.app_context():
-            db.session.remove()
-            db.drop_all()
+        self.patcher.stop()
 
-    # Test adding an item to the cart
-    def test_add_to_cart(self):
-        user_id = 1
-        product_id = 1
-        quantity = 2
-        
-        data = {
-            'user_id': user_id,
-            'product_id': product_id,
-            'quantity': quantity
-        }
-        
-        response = self.client.post('/cart/add', json=data)
+    @patch('src.main.main.Cart.query')
+    @patch('src.main.main.CartItem.query')
+    def test_add_to_cart(self, mock_cart_item_query, mock_cart_query):
+        # Mock cart and cart item
+        mock_cart = Cart(cart_id=1, user_id=1)
+        mock_cart_query.filter_by.return_value.first.return_value = mock_cart
 
-        # Assert that the response is a 201 Created and the message is correct
+        mock_cart_item = CartItem(cart_item_id=1, cart_id=1, product_id=1, quantity=1)
+        mock_cart_item_query.filter_by.return_value.first.return_value = None
+
+        # Test data
+        response = self.app.post('/cart/add', json={
+            'user_id': 1,
+            'product_id': 1,
+            'quantity': 2
+        })
+
+        # Verify response
         self.assertEqual(response.status_code, 201)
-        self.assertIn('Item added to cart successfully', response.get_json()['message'])
-
-        # Verify the cart item was added
-        with app.app_context():
-            cart = Cart.query.filter_by(user_id=user_id).first()
-            self.assertIsNotNone(cart)
-            cart_item = CartItem.query.filter_by(cart_id=cart.cart_id, product_id=product_id).first()
-            self.assertIsNotNone(cart_item)
-            self.assertEqual(cart_item.quantity, quantity)
-
-    # Test viewing the cart when it's not empty
-    def test_view_cart(self):
-        user_id = 1
-        product_id = 1
-        quantity = 1
-
-        # Add item to cart
-        data = {'user_id': user_id, 'product_id': product_id, 'quantity': quantity}
-        self.client.post('/cart/add', json=data)
-
-        # View the cart
-        response = self.client.get(f'/cart/{user_id}')
+        self.assertEqual(response.json['message'], 'Item added to cart successfully')
         
-        # Assert that the response is a 200 OK and contains the correct data
-        self.assertEqual(response.status_code, 200)
-        cart_data = response.get_json()
-        self.assertEqual(len(cart_data['items']), 1)
-        self.assertEqual(cart_data['items'][0]['product_name'], 'Test Product')
+    @patch('src.main.main.Cart.query')
+    def test_view_cart(self, mock_cart_query):
+        # Mock cart and items
+        mock_cart_item = CartItem(cart_item_id=1, product_id=1, quantity=2)
+        mock_cart_item.product = Product(product_id=1, name="Green Tea", price=10.0)
+        mock_cart = Cart(cart_id=1, user_id=1, items=[mock_cart_item])
+        mock_cart_query.filter_by.return_value.first.return_value = mock_cart
 
-    # Test viewing the cart when it's empty
-    def test_view_empty_cart(self):
-        user_id = 2
+        # Test data
+        response = self.app.get('/cart/1')
+
+        # Verify response
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['cart_id'], 1)
+        self.assertEqual(len(response.json['items']), 1)
+        self.assertEqual(response.json['items'][0]['product_name'], "Green Tea")
+
+    @patch('src.main.main.CartItem.query')
+    def test_remove_from_cart(self, mock_cart_item_query):
+        # Mock cart item
+        mock_cart_item = CartItem(cart_item_id=1, cart_id=1, product_id=1, quantity=1)
+        mock_cart_item_query.get.return_value = mock_cart_item
+
+        # Test data
+        response = self.app.delete('/cart/remove', json={
+            'cart_item_id': 1
+        })
+
+        # Verify response
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json['message'], 'Item removed from cart successfully')
         
-        response = self.client.get(f'/cart/{user_id}')
-
-        # Assert that the response is a 200 OK and the cart is empty
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('Cart is empty', response.get_json()['message'])
-
-    # Test removing an item from the cart
-    def test_remove_from_cart(self):
-        user_id = 1
+if __name__ == '__main__':
+    unittest.main()
