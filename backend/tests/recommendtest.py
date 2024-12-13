@@ -10,15 +10,15 @@ class RecommendRouteTest(unittest.TestCase):
         self.app.testing = True
 
         # Mock database session
-        self.patcher = patch('src.main.main.db.session')
+        self.patcher = patch('backend.main.app.db.session')
         self.mock_db_session = self.patcher.start()
 
     def tearDown(self):
         self.patcher.stop()
 
-    @patch('src.main.main.redis_conn')
-    @patch('src.main.main.Product.query')
-    @patch('src.main.main.User.query')
+    @patch('backend.main.app.redis_conn')
+    @patch('backend.main.app.Product.query')
+    @patch('backend.main.app.User.query')
     def test_get_recommendations_success(self, mock_user_query, mock_product_query, mock_redis):
         # Mock user
         mock_user = User(user_id=1, email="test@example.com")

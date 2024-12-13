@@ -11,14 +11,14 @@ class CartApiTest(unittest.TestCase):
         self.app.testing = True
 
         # Mock database session
-        self.patcher = patch('backend.main.main.db.session')
+        self.patcher = patch('backend.main.app.db.session')
         self.mock_db_session = self.patcher.start()
 
     def tearDown(self):
         self.patcher.stop()
 
     @patch('backend.main.app.Cart.query')
-    @patch('backend.main.CartItem.query')
+    @patch('backend.main.app.CartItem.query')
     def test_add_to_cart(self, mock_cart_item_query, mock_cart_query):
         # Mock cart and cart item
         mock_cart = Cart(cart_id=1, user_id=1)
