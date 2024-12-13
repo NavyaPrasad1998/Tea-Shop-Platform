@@ -1,6 +1,6 @@
 import unittest
-from src.main.main import app, db, redis_conn
-from src.main.model import Product
+from backend.main.app import app, db, redis_conn
+from backend.main.model import Product
 import json
 import warnings
 from sqlalchemy.exc import LegacyAPIWarning

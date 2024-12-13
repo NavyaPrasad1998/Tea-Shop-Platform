@@ -1,0 +1,53 @@
+
+# Docker Build
+docker build -t gcr.io/datacenter-project-444513/tearoma-backend .
+#Docker Push
+docker push gcr.io/datacenter-project-444513/tearoma-backend
+#Craete Docker Cluster
+#Set Up a GKE Cluster
+gcloud container clusters create flask-cluster \
+    --num-nodes=3 \
+    --zone=us-central1-a
+
+#Connect to the Cluster:
+gcloud container clusters get-credentials flask-cluster --zone=us-central1-a
+ 
+
+#Create Kubernetes Sectrets for credentials/ config
+kubectl create secret generic backend-secrets \
+    --from-literal=DATABASE_URI='postgresql://admin:admin%40123@10.64.96.3:5432/tearoma' \
+    --from-literal=REDIS_URL='redis://10.64.97.3:6379/0' \
+    --from-literal=MAIL_USERNAME='tearoma.help' \
+    --from-literal=MAIL_PASSWORD='apbg nkqe ndzf ljhl' \
+    --from-literal=SECRET_KEY='QiwdbYdxj98'
+
+
+#Apply deployment and service yaml files
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+
+#Get service check service name from yaml file
+kubectl get servive <service-name>
+kubectl get pods
+
+#Updating the image if we re-build the image
+kubectl set image deployment/tearoma-backend tearoma-backend=gcr.io/datacenter-project-444513/tearoma-backend:latest 
+
+#Get pods
+kubectl get pods
+
+#If pods are not updates delete the pods
+kubectl delete pods <pod-name>
+
+#restart the pods
+kubectl delete pods -l app=tearoma-backend
+#Get the external IP
+kubectl get service tearoma-backend-service
+NAME                      TYPE           CLUSTER-IP       EXTERNAL-IP     PORT(S)          AGE
+tearoma-backend-service   LoadBalancer   34.118.229.232   35.225.187.48   5000:32515/TCP   124m
+
+
+#Test on postman
+http://35.225.187.48:5000/health
+
+

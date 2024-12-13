@@ -1,8 +1,8 @@
 import unittest
 import sys
 import os
-from src.main.main import app, s , redis_conn
-from src.main.model import db, User
+from backend.main.app import app, s , redis_conn
+from backend.main.model import db, User
 from werkzeug.security import generate_password_hash
 from flask import jsonify
 

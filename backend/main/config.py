@@ -1,5 +1,5 @@
-# SQLALCHEMY_DATABASE_URI = 'postgresql://tea_user:tea123@localhost:5432/tea_shop'
-SQLALCHEMY_DATABASE_URI = 'postgresql://tea_user:tea_123@35.193.72.71:5432/teashop'
+#Contents of this file are moved to kubernetes secrets and configmaps
+SQLALCHEMY_DATABASE_URI = 'postgresql://tea_user:tea123@localhost:5432/tea_shop'
 SQLALCHEMY_TRACK_MODIFICATIONS = False
 REDIS_URL = 'redis://localhost:6379/0'
 MAIL_USERNAME = 'tearoma.help'

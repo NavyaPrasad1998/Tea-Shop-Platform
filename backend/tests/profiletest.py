@@ -1,6 +1,6 @@
 import unittest
-from src.main.main import app, db, redis_conn
-from src.main.model import User
+from backend.main.app import app, db, redis_conn
+from backend.main.model import User
 from werkzeug.security import generate_password_hash
 import json
 

@@ -1,53 +1,65 @@
 from flask import Flask, render_template, request, redirect, url_for, session
-from flask_cors import CORS
+#from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import jsonify
-from config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
 from model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, BestSeller, db
 import json
 import redis
+import os
 from flask_redis import FlaskRedis
 from redis import Redis 
 from itsdangerous import URLSafeTimedSerializer
+#This is for Unit Testing
+# from backend.main.model import User, Product, Subscription, ChatMessage, Recommendation, Cart, CartItem, BestSeller, db
+# from backend.main.config import SQLALCHEMY_DATABASE_URI , SQLALCHEMY_TRACK_MODIFICATIONS, REDIS_URL, MAIL_USERNAME, MAIL_PASSWORD, SECRET_KEY
+
 
 
 app = Flask(__name__)
 
 
 # Enable CORS for React frontend running at localhost:3000
-CORS(app, origins="http://127.0.0.1:3000")  # Adjust based on your frontend URL
+#CORS(app, origins="http://127.0.0.1:3000")  # Adjust based on your frontend URL
 
 
+# Database Configuration (Loaded from Kubernetes Secrets)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI')  
+
+# For Unit Testing
+# app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 
-# Redis Connection
-redis_conn = redis.Redis(host='10.0.0.3', port=6379, db=0)
-#Database Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = SQLALCHEMY_TRACK_MODIFICATIONS
-app.config['REDIS_URL'] = REDIS_URL
+# Redis Configuration
+redis_conn = redis.Redis.from_url(os.getenv('REDIS_URL'))
+# For Unit Testing
+#redis_conn = Redis(host='localhost', port=6379, db=0)  
+
+
+# Mail Configuration
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 465
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_USE_TLS'] = False
+app.config['MAIL_USE_SSL'] = True
+mail = Mail(app)
+
+
+# Secret Key
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+# Only for Unit Testing
+#app.config['SECRET_KEY'] = SECRET_KEY 
+s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+
 
 # init SQLAlchemy
 db.init_app(app)
 
 # Initialize Redis instance
 redis = FlaskRedis(app)
-
-# Flask Mail Setup
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 465
-app.config['MAIL_USERNAME'] = MAIL_USERNAME
-app.config['MAIL_PASSWORD'] = MAIL_PASSWORD
-app.config['MAIL_USE_TLS'] = False
-app.config['MAIL_USE_SSL'] = True
-mail = Mail(app)
-
-# Secret key for generating tokens
-app.config['SECRET_KEY'] = SECRET_KEY
-s = URLSafeTimedSerializer(app.config['SECRET_KEY'])
-
 
 #API Routes
 
@@ -125,7 +137,7 @@ def forgot_password():
 
     msg = Message(
         'Password Reset Request',
-        sender= MAIL_USERNAME,
+        sender= app.config['MAIL_USERNAME'],
         recipients=[email]
     )
     msg.body = message_body
@@ -216,10 +228,10 @@ def profile():
 #Get all products
 @app.route('/products', methods=['GET'])
 def get_products():
-    # cached_projets = redis_conn.get('products')
-    # if cached_projets:
-    #     print("Cached Products")
-    #     return jsonify(json.loads(cached_projets)), 200
+    cached_projets = redis_conn.get('products')
+    if cached_projets:
+        print("Cached Products")
+        return jsonify(json.loads(cached_projets)), 200
     products = Product.query.all()
     products_data = [{
         'product_id': product.product_id,
@@ -228,33 +240,10 @@ def get_products():
         'category': product.category,
         'image_url': product.image_url
     } for product in products]
-    # Cache the products with expiry time of 1 hour
-    # redis_conn.setex('products', 3600, json.dumps(products_data))
+    #Cache the products with expiry time of 1 hour
+    redis_conn.setex('products', 3600, json.dumps(products_data))
     return jsonify(products_data), 200
 
-#Get product by id
-@app.route('/products/<int:product_id>', methods=['GET'])
-def get_product(product_id):
-    cached_product = redis_conn.get(f'product:{product_id}')
-    if cached_product:
-        print("Cached Product")
-        return jsonify(json.loads(cached_product)), 200
-    product = Product.query.get(product_id)
-    if not product:
-        return jsonify({'message': 'Product not found'}), 404
-
-    product_data = {
-        'product_id': product.product_id,
-        'name': product.name,
-        'price': product.price,
-        'category': product.category,
-        'image_url': product.image_url
-    }
-    # Cache the product with expiry time of 1 hour
-    redis_conn.setex(f'product:{product_id}', 3600, json.dumps(product_data))
-
-
-    return jsonify(product_data), 200
 
 @app.route('/view-product/<int:product_id>', methods=['POST'])
 def view_product(product_id):
@@ -368,6 +357,9 @@ def subscribe():
     data = request.get_json()
     email = data.get('email')
     product_id = data.get('product_id')
+    frequency = data.get('frequency')
+    quantity = data.get('quantity')
+    status = 'active'
 
     user = User.query.filter_by(email=email).first()
     if not user:
@@ -377,7 +369,7 @@ def subscribe():
     if not product:
         return jsonify({'message': 'Product not found'}), 404
 
-    new_subscription = Subscription(user_id=user.user_id, product_id=product_id)
+    new_subscription = Subscription(user_id=user.user_id, product_id=product_id, frequency=frequency, quantity=quantity, status=status)
     db.session.add(new_subscription)
     db.session.commit()
     return jsonify({'message': 'Subscribed successfully'}), 201
@@ -710,7 +702,7 @@ def get_teaware():
 #Get all Tealeaves
 @app.route('/tealeaves', methods=['GET'])
 def get_tealeaves():
-    tealeaves = Product.query.filter_by(category='Tealeaves').all()
+    tealeaves = Product.query.filter_by(category='Tea leaves').all()
     tealeaves_data = [{
         'product_id': tealeaves.product_id,
         'name': tealeaves.name,
@@ -720,9 +712,10 @@ def get_tealeaves():
     } for tealeaves in tealeaves]
     return jsonify(tealeaves_data), 200
 
-if __name__ == "__main__":    
-    with app.app_context():
+with app.app_context():
         db.create_all()
+
+if __name__ == "__main__":    
     # app.run(debug=True)
     app.run(host="0.0.0.0", port=5000, debug=True)
     

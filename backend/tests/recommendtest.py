@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
-from src.main.main import app, db, redis_conn
-from src.main.model import User, Product
+from backend.main.app import app, db, redis_conn
+from backend.main.model import User, Product
 
 class RecommendRouteTest(unittest.TestCase):
     def setUp(self):

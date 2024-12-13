@@ -3,8 +3,8 @@ import sys
 import os
 from unittest.mock import patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
-from src.main.main import app, db
-from src.main.model import User, Product, Subscription
+from backend.main.app import app, db
+from backend.main.model import User, Product, Subscription
 
 class SubscribeRouteTest(unittest.TestCase):
 

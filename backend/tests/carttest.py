@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
-from src.main.main import app, db
-from src.main.model import User, Product, Cart, CartItem
+from backend.main.app import app, db
+from backend.main.model import User, Product, Cart, CartItem
 
 class CartApiTest(unittest.TestCase):
 
@@ -11,14 +11,14 @@ class CartApiTest(unittest.TestCase):
         self.app.testing = True
 
         # Mock database session
-        self.patcher = patch('src.main.main.db.session')
+        self.patcher = patch('backend.main.main.db.session')
         self.mock_db_session = self.patcher.start()
 
     def tearDown(self):
         self.patcher.stop()
 
-    @patch('src.main.main.Cart.query')
-    @patch('src.main.main.CartItem.query')
+    @patch('backend.main.app.Cart.query')
+    @patch('backend.main.CartItem.query')
     def test_add_to_cart(self, mock_cart_item_query, mock_cart_query):
         # Mock cart and cart item
         mock_cart = Cart(cart_id=1, user_id=1)
@@ -38,7 +38,7 @@ class CartApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json['message'], 'Item added to cart successfully')
         
-    @patch('src.main.main.Cart.query')
+    @patch('backend.main.app.Cart.query')
     def test_view_cart(self, mock_cart_query):
         # Mock cart and items
         mock_cart_item = CartItem(cart_item_id=1, product_id=1, quantity=2)
@@ -55,7 +55,7 @@ class CartApiTest(unittest.TestCase):
         self.assertEqual(len(response.json['items']), 1)
         self.assertEqual(response.json['items'][0]['product_name'], "Green Tea")
 
-    @patch('src.main.main.CartItem.query')
+    @patch('backend.main.app.CartItem.query')
     def test_remove_from_cart(self, mock_cart_item_query):
         # Mock cart item
         mock_cart_item = CartItem(cart_item_id=1, cart_id=1, product_id=1, quantity=1)
