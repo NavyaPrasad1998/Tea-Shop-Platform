@@ -21,7 +21,7 @@ app = Flask(__name__)
 
 
 # Enable CORS for React frontend running at localhost:3000
-#CORS(app, origins="http://127.0.0.1:3000")  # Adjust based on your frontend URL
+CORS(app, origins="http://localhost:3000")  # Adjust based on your frontend URL
 
 
 # Database Configuration (Loaded from Kubernetes Secrets)
@@ -100,7 +100,7 @@ def login():
     if not user or not check_password_hash(user.password_hash, password):
         return jsonify({'message': 'Invalid credentials'}), 400
 
-    return jsonify({'message': 'Login successful'}), 200
+    return jsonify({'message': 'Login successful', 'user_id': user.user_id, 'name': user.name}), 200
 
 @app.route('/forgot-password', methods=['POST'])
 def forgot_password():
@@ -244,6 +244,29 @@ def get_products():
     redis_conn.setex('products', 3600, json.dumps(products_data))
     return jsonify(products_data), 200
 
+#Get a product by id
+@app.route('/products/<int:product_id>', methods=['GET'])
+def get_one_product(product_id):
+    cached_product = redis_conn.get(f'product:{product_id}')
+    if cached_product:
+        print("Cached Product")
+        return jsonify(json.loads(cached_product)), 200
+    product = Product.query.get(product_id)
+    if not product:
+        return jsonify({'message': 'Product not found'}), 404
+    product_data = {
+        'product_id': product.product_id,
+        'name': product.name,
+        'description': product.description,
+        'price': product.price,
+        'category': product.category,
+        'image_url': product.image_url,
+        'stock_quantity': product.stock_quantity
+    }
+    # Cache the product with expiry time of 1 hour
+    redis_conn.setex(f'product:{product_id}', 3600, json.dumps(product_data))
+    return jsonify(product_data), 200
+
 
 @app.route('/view-product/<int:product_id>', methods=['POST'])
 def view_product(product_id):
@@ -317,10 +340,6 @@ def delete_product(product_id):
 @app.route('/recommendations', methods=['GET'])
 def get_recommendations():
     email = request.args.get('email')
-    cached_recommendations = redis_conn.get(f"user:{email}:recommendations")
-    
-    if cached_recommendations:
-        return jsonify(eval(cached_recommendations)), 200  # Return cached recommendations
     user = User.query.filter_by(email=email).first()
     if not user:
         return jsonify({'message': 'User not found'}), 404
@@ -328,7 +347,7 @@ def get_recommendations():
     viewed_product_ids = redis_conn.smembers(f"user:{user.user_id}:viewed_products")
     
     if not viewed_product_ids:
-        return jsonify({'message': 'No viewed products found'}), 404
+        return jsonify({'message': 'No viewed products found'}), 200
     
     viewed_product_ids = [int(product_id) for product_id in viewed_product_ids]
     viewed_products = Product.query.filter(Product.product_id.in_(viewed_product_ids)).all()
@@ -377,8 +396,7 @@ def subscribe():
 #Get subscriptions for a user
 @app.route('/subscriptions', methods=['GET'])
 def get_subscriptions():
-    data = request.get_json()
-    email = data.get('email')
+    email = request.args.get('email')
 
     user = User.query.filter_by(email=email).first()
     if not user:
@@ -387,7 +405,10 @@ def get_subscriptions():
     subscriptions = Subscription.query.filter_by(user_id=user.user_id).all()
     return jsonify([{
         'subscription_id': subscription.subscription_id,
-        'product_id': subscription.product_id
+        'product_id': subscription.product_id,
+        'frequency': subscription.frequency,
+        'quantity': subscription.quantity,
+        'status': subscription.status
     } for subscription in subscriptions]), 200
 
 #Unsubscribe from a product: update status to cancelled
@@ -661,7 +682,7 @@ def get_top_best_sellers():
 
 
 #Get all Teas
-@app.route('/teas', methods=['GET'])
+@app.route('/collection/teas', methods=['GET'])
 def get_teas():
     teas = Product.query.filter_by(category='Tea').all()
     teas_data = [{
@@ -674,7 +695,7 @@ def get_teas():
     return jsonify(teas_data), 200
 
 #Get all snacks
-@app.route('/snacks', methods=['GET'])
+@app.route('/collection/snacks', methods=['GET'])
 def get_snacks():
     snacks = Product.query.filter_by(category='Snack').all()
     snacks_data = [{
@@ -687,7 +708,7 @@ def get_snacks():
     return jsonify(snacks_data), 200
 
 #Get all Teaware
-@app.route('/teaware', methods=['GET'])
+@app.route('/collection/teaware', methods=['GET'])
 def get_teaware():
     teaware = Product.query.filter_by(category='Teaware').all()
     teaware_data = [{
@@ -700,9 +721,9 @@ def get_teaware():
     return jsonify(teaware_data), 200
 
 #Get all Tealeaves
-@app.route('/tealeaves', methods=['GET'])
+@app.route('/collection/tealeaves', methods=['GET'])
 def get_tealeaves():
-    tealeaves = Product.query.filter_by(category='Tea leaves').all()
+    tealeaves = Product.query.filter_by(category='Tea Leaves').all()
     tealeaves_data = [{
         'product_id': tealeaves.product_id,
         'name': tealeaves.name,
@@ -711,6 +732,23 @@ def get_tealeaves():
         'image_url': tealeaves.image_url
     } for tealeaves in tealeaves]
     return jsonify(tealeaves_data), 200
+
+#Get the product details based on name
+@app.route('/collection/<name>', methods=['GET'])
+def get_product(name):
+    #regex to remove hyphen if present in the name and replace it with space
+    name = name.replace('-', ' ')
+    #search the product based on the name and like operator
+    product = Product.query.filter(Product.name.ilike(f'%{name}%')).first()
+    if not product:
+        return jsonify({'message': 'Product not found'}), 404
+    return jsonify({
+        'product_id': product.product_id,
+        'name': product.name,
+        'price': product.price,
+        'category': product.category,
+        'image_url': product.image_url
+    }), 200
 
 with app.app_context():
         db.create_all()
