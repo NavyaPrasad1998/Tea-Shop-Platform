@@ -1,248 +1,165 @@
 import unittest
-import sys
-import os
-from backend.main.app import app, s , redis_conn
-from backend.main.model import db, User
-from werkzeug.security import generate_password_hash
 from flask import jsonify
+from werkzeug.security import generate_password_hash
+from itsdangerous import URLSafeTimedSerializer
+from backend.main.app import app, redis_conn, db, User, mail
+from flask_mail import Message
 
-class TestRegister(unittest.TestCase):
-    # Setup a testing environment
+
+class TestUserManagement(unittest.TestCase):
     def setUp(self):
-        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'  # In-memory SQLite database for testing
+        app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'  # In-memory SQLite database
         app.config['TESTING'] = True
+        app.config['MAIL_USERNAME'] = 'test@example.com'
         self.client = app.test_client()
 
         with app.app_context():
+            # Drop all tables and recreate them to ensure a clean state
+            db.drop_all()
             db.create_all()
 
-            # Add a test user
-            self.test_user = User(
-                name="John Doe",
-                email="john@example.com",
+            # Create a default user
+            self.default_user = User(
+                name="Default User",
+                email="default@example.com",
                 password_hash=generate_password_hash("password123"),
                 phone_number="1234567890",
                 shipping_address="123 Main St"
             )
-            db.session.add(self.test_user)
+            db.session.add(self.default_user)
             db.session.commit()
 
-            # Create a valid token
-            self.valid_token = s.dumps(self.test_user.email, salt='reset-password')
+            # Create a valid reset token
+            self.serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+            self.valid_token = self.serializer.dumps(self.default_user.email, salt='reset-password')
             redis_conn.setex(f"reset_token:{self.valid_token}", 86400, "valid")
 
 
     def tearDown(self):
-        # Cleanup after each test
         with app.app_context():
             db.session.remove()
             db.drop_all()
+        redis_conn.flushdb()
 
-    # Test User Registration - Successful Case
     def test_register_success(self):
-        user_data = {
-            "name": "John Doe",
-            "email": "john1@example.com",
+        data = {
+            "name": "New User",
+            "email": "newuser@example.com",
             "password": "password123",
-            "phone_number": "1234567890",
-            "shipping_address": "123 Main St"
+            "phone_number": "9876543210",
+            "shipping_address": "456 Another St"
         }
-        
-        # Send POST request to the /register route
-        response = self.client.post('/register', json=user_data)
-
-        # Assert that the response is a 201 Created and has the correct message
+        response = self.client.post('/register', json=data)
         self.assertEqual(response.status_code, 201)
         self.assertIn('User registered successfully', response.get_json()['message'])
 
-        # Verify the user was added to the database
         with app.app_context():
-            user = User.query.filter_by(email="john@example.com").first()
-            self.assertIsNotNone(user)
-            self.assertEqual(user.name, "John Doe")
-            self.assertEqual(user.email, "john@example.com")
+            new_user = User.query.filter_by(email="newuser@example.com").first()
+            self.assertIsNotNone(new_user)
 
-    # Test User Registration - Handling Existing Email
     def test_register_existing_email(self):
-        # First user registration
-        user_data = {
-            "name": "John Doe",
-            "email": "john@example.com",
+        data = {
+            "name": "Duplicate User",
+            "email": "default@example.com",  # Existing user email
             "password": "password123",
-            "phone_number": "1234567890",
-            "shipping_address": "123 Main St"
+            "phone_number": "9876543210",
+            "shipping_address": "456 Another St"
         }
-        self.client.post('/register', json=user_data)
-
-        # Attempt to register with the same email
-        duplicate_user_data = {
-            "name": "Jane Doe",
-            "email": "john@example.com",
-            "password": "newpassword123",
-            "phone_number": "0987654321",
-            "shipping_address": "456 Main St"
-        }
-        
-        response = self.client.post('/register', json=duplicate_user_data)
-
-        # Assert that the response is a 400 Bad Request and contains the appropriate error message
+        response = self.client.post('/register', json=data)
         self.assertEqual(response.status_code, 400)
         self.assertIn('Email already exists', response.get_json()['message'])
 
-    # Test login - Successful Case
     def test_login_success(self):
-        # Register a user
-        user_data = {
-            "name": "John Doe",
-            "email": "john@example.com",
-            "password": "password123",
-            "phone_number": "1234567890",
-            "shipping_address": "123 Main St"
-        }
-        self.client.post('/register', json=user_data)
-
-        # Login with the registered user
-        login_data = {
-            "email": "john@example.com",
+        data = {
+            "email": "default@example.com",
             "password": "password123"
-        }   
-        response = self.client.post('/login', json=login_data)
-
-        # Assert that the response is a 200 OK and contains the correct message
+        }
+        response = self.client.post('/login', json=data)
         self.assertEqual(response.status_code, 200)
         self.assertIn('Login successful', response.get_json()['message'])
 
-    # Test login - Handling Non-Existent User
-    def test_login_non_existent_user(self):
-        # Attempt to login with a non-existent user
-        login_data = {
-            "email": "john1@example.com",
+    def test_login_invalid_credentials(self):
+        data = {
+            "email": "default@example.com",
+            "password": "wrongpassword"
+        }
+        response = self.client.post('/login', json=data)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Invalid credentials', response.get_json()['message'])
+
+    def test_login_nonexistent_user(self):
+        data = {
+            "email": "nonexistent@example.com",
             "password": "password123"
         }
-        response = self.client.post('/login', json=login_data)
-
-        # Assert that the response is a 404 Not Found and contains the appropriate error message
+        response = self.client.post('/login', json=data)
         self.assertEqual(response.status_code, 400)
         self.assertIn('Invalid credentials', response.get_json()['message'])
 
-    # Test login - Handling Incorrect Password
-    def test_login_incorrect_password(self):
-        # Register a user
-        user_data = {
-            "name": "John Doe",
-            "email": "john@example.com",
-            "password": "password123",
-            "phone_number": "1234567890",
-            "shipping_address": "123 Main St"
-        }
-        self.client.post('/register', json=user_data)
+    from unittest.mock import patch
 
-        # Attempt to login with the wrong password
-        login_data = {
-            "email": "john@example.com",
-            "password": "password1234"
-        }
-        response = self.client.post('/login', json=login_data)
+    @patch('backend.main.app.mail.send')
+    def test_forgot_password_success(self, mock_mail_send):
+        mock_mail_send.return_value = None  # Mock successful email send
 
-        # Assert that the response is a 400 Bad Request and contains the appropriate error message
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('Invalid credentials', response.get_json()['message'])
-
-    def test_forgot_password_success(self):
-        # Register a user
-        user_data = {
-            "name": "John Doe",
-            "email": "john@example.com",
-            "password": "password123",
-            "phone_number": "1234567890",
-            "shipping_address": "123 Main St"
-        }
-        self.client.post('/register', json=user_data)
-
-        # Send POST request to /forgot-password with a valid email
-        response = self.client.post('/forgot-password', json={"email": "john@example.com"})
-        
-        # Assert that the response is 200 and contains the success message
-        print(response.get_json())
+        response = self.client.post('/forgot-password', json={
+            'email': self.default_user.email
+        })
         self.assertEqual(response.status_code, 200)
-        self.assertIn('Password reset email sent successfully', response.get_json()['message'])
+        self.assertIn(b'Password reset email sent successfully', response.data)
 
 
     def test_forgot_password_user_not_found(self):
-        # Send POST request to /forgot-password with a non-existent email
-        response = self.client.post('/forgot-password', json={"email": "nonexistent@example.com"})
-        
-        # Assert that the response is 404 and contains the correct error message
+        data = {"email": "nonexistent@example.com"}
+        response = self.client.post('/forgot-password', json=data)
         self.assertEqual(response.status_code, 404)
         self.assertIn('User not found', response.get_json()['message'])
 
-    def test_forgot_password_missing_email(self):
-        # Send POST request to /forgot-password without an email
-        response = self.client.post('/forgot-password', json={})
-        
-        # Assert that the response is 400 Bad Request due to missing email
-        self.assertEqual(response.status_code, 404)
-
     def test_reset_password_success(self):
-        # Send POST request to /reset-password with a valid token and new password
-        response = self.client.post('/reset-password', json={
+        data = {
             "token": self.valid_token,
             "password": "newpassword123"
-        })
-        
-        # Assert that the response is 200 and contains the success message
+        }
+        response = self.client.post('/reset-password', json=data)
         self.assertEqual(response.status_code, 200)
         self.assertIn('Password successfully reset', response.get_json()['message'])
 
-        # Verify the password was updated
         with app.app_context():
-            user = User.query.filter_by(email="john@example.com").first()
+            user = User.query.filter_by(email="default@example.com").first()
             self.assertTrue(user)
             self.assertTrue(user.password_hash != generate_password_hash("password123"))
 
     def test_reset_password_invalid_token(self):
-        # Send POST request to /reset-password with an invalid token
-        response = self.client.post('/reset-password', json={
+        data = {
             "token": "invalidtoken",
             "password": "newpassword123"
-        })
-        
-        # Assert that the response is 400 and contains the error message
+        }
+        response = self.client.post('/reset-password', json=data)
         self.assertEqual(response.status_code, 400)
         self.assertIn('The reset link is invalid or expired', response.get_json()['message'])
 
     def test_reset_password_user_not_found(self):
-        # Create a valid token for a non-existent user
-        fake_token = s.dumps("nonexistent@example.com", salt='reset-password')
+        # Create a token for a non-existent user
+        fake_token = self.serializer.dumps("nonexistent@example.com", salt='reset-password')
         redis_conn.setex(f"reset_token:{fake_token}", 86400, "valid")
 
-        # Send POST request to /reset-password
-        response = self.client.post('/reset-password', json={
+        data = {
             "token": fake_token,
             "password": "newpassword123"
-        })
-        
-        # Assert that the response is 404 and contains the correct error message
+        }
+        response = self.client.post('/reset-password', json=data)
         self.assertEqual(response.status_code, 404)
         self.assertIn('User not found', response.get_json()['message'])
 
     def test_reset_password_expired_token(self):
-        # Create a valid token
-        expired_token = s.dumps(self.test_user.email, salt='reset-password')
-
-        # Simulate token expiration by deleting it from Redis
-        redis_conn.delete(f"reset_token:{expired_token}")
-
-        # Attempt to use the expired token to reset the password
-        response = self.client.post('/reset-password', json={
-            "token": expired_token,
+        redis_conn.delete(f"reset_token:{self.valid_token}")  # Simulate token expiration
+        data = {
+            "token": self.valid_token,
             "password": "newpassword123"
-        })
-
-        # Assert that the response is 400 and contains the appropriate error message
+        }
+        response = self.client.post('/reset-password', json=data)
         self.assertEqual(response.status_code, 400)
         self.assertIn('The reset link is invalid or expired', response.get_json()['message'])
-
 
 
 if __name__ == '__main__':

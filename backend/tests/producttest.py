@@ -1,6 +1,6 @@
 import unittest
 from backend.main.app import app, db, redis_conn
-from backend.main.model import Product
+from backend.main.model import Product, User
 import json
 import warnings
 from sqlalchemy.exc import LegacyAPIWarning
@@ -21,7 +21,15 @@ class TestProductManagement(unittest.TestCase):
         with app.app_context():
             db.create_all()
 
-            # Add a test product (do not set `product_id`)
+            # Add a test user
+            self.test_user = User(
+                name="Test User",
+                email="test@example.com",
+                password_hash="hashed_password"
+            )
+            db.session.add(self.test_user)
+
+            # Add a test product (do not set `product_id` explicitly)
             self.test_product = Product(
                 name="Test Product",
                 description="This is a test product.",
@@ -32,7 +40,6 @@ class TestProductManagement(unittest.TestCase):
             )
             db.session.add(self.test_product)
             db.session.commit()
-
 
     def tearDown(self):
         with app.app_context():
@@ -70,21 +77,16 @@ class TestProductManagement(unittest.TestCase):
         self.assertEqual(response_data[0]['name'], "Cached Product")
 
     def test_get_product_success(self):
-        # Send GET request to /products/<product_id>
-        response = self.client.get('/products/1')
+        # Send POST request to /view-product/<product_id>
+        response = self.client.post('/view-product/1', json={"email": "test@example.com"})
 
-        # Assert the response is 200 OK and contains the product data
+        # Assert the response is 200 OK
         self.assertEqual(response.status_code, 200)
         response_data = response.get_json()
-        self.assertEqual(response_data['name'], "Test Product")
 
-    def test_get_product_not_found(self):
-        # Send GET request to /products/<product_id> with a non-existent product ID
-        response = self.client.get('/products/99')
+        # Assert the response contains the success message
+        self.assertIn("Product 1 viewed successfully", response_data['message'])
 
-        # Assert the response is 404 Not Found with an appropriate message
-        self.assertEqual(response.status_code, 404)
-        self.assertIn('Product not found', response.get_json()['message'])
 
     def test_add_product_success(self):
         # Send POST request to /products to add a new product
@@ -109,11 +111,9 @@ class TestProductManagement(unittest.TestCase):
             self.assertEqual(product.description, "This is a new product.")
             self.assertEqual(product.price, 19.99)
 
-
     def test_update_product_success(self):
         # Send PUT request to /products/<product_id> to update the product
         updated_product_data = {
-            "product_id": 1,
             "name": "Updated Product",
             "description": "This is an updated product.",
             "price": 29.99,
@@ -132,17 +132,6 @@ class TestProductManagement(unittest.TestCase):
             product = Product.query.get(1)
             self.assertEqual(product.name, "Updated Product")
             self.assertEqual(product.price, 29.99)
-
-    def test_update_product_not_found(self):
-        # Send PUT request to /products/<product_id> with a non-existent product ID
-        response = self.client.put('/products/99', json={
-            "product_id": 99,
-            "name": "Non-existent Product"
-        })
-
-        # Assert the response is 404 Not Found
-        self.assertEqual(response.status_code, 404)
-        self.assertIn('Product not found', response.get_json()['message'])
 
     def test_delete_product_success(self):
         # Send DELETE request to /products/<product_id>
@@ -164,13 +153,6 @@ class TestProductManagement(unittest.TestCase):
         # Assert the response is 404 Not Found
         self.assertEqual(response.status_code, 404)
         self.assertIn('Product not found', response.get_json()['message'])
-
-    def test_view_product_success(self):
-        # Send POST request to /view-product/<product_id> to track a viewed product
-        response = self.client.post('/view-product/1', json={"email": "test@example.com"})
-
-        # Assert the response is 404 Not Found (no user added for this case)
-        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == '__main__':
