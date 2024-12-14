@@ -1,10 +1,11 @@
 import React, {useState} from 'react';
 import { Box, TextField, Button, Typography, Link, Alert, Dialog, DialogActions, DialogContent, DialogTitle, Snackbar,CircularProgress } from '@mui/material';
 import axios from 'axios';
-import { Link as RouterLink, useNavigate  } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useLocation   } from 'react-router-dom';
+import axiosInstance from './axiosInstance';
 import './css/LoginPage.css'
 
-function LoginPage() {
+function LoginPage({ onLoginSuccess }) {
     const [email, setEmail] = useState('');
     const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -14,19 +15,37 @@ function LoginPage() {
     const [openSnackbar, setOpenSnackbar] = useState(false);
     const [loading, setLoading] = useState(false); 
     const navigate = useNavigate();
+    const location = useLocation();
 
     const handleLogin = async () => {
         setLoading(true);
         try {
-            const response = await axios.post('http://127.0.0.1:5000/login', { email, password });
+            const response = await axiosInstance.post('/login', { email, password });
+            console.log("Login response:", response)
             if (response.status === 200) {
                 setMessage(response.data.message);
                 setError(false);
-        
+                const userDetails = {
+                    name: response.data.name,
+                    email: email,
+                    user_id: response.data.user_id,
+                };
+                console.log("userDetails:",userDetails)
+                onLoginSuccess(userDetails);
+
+                // Retrieve saved state from sessionStorage
+                const savedState = JSON.parse(sessionStorage.getItem('redirectState'));
+                sessionStorage.removeItem('redirectState'); // Clear the saved state after use
+
                 // Simulate a delay for showing the spinner
                 setTimeout(() => {
                   setLoading(false); // Stop spinner
-                  navigate('/'); // Redirect to main landing page
+                  // Navigate back to the referring page with the preserved state
+                    if (savedState) {
+                    navigate(savedState.from, { state: { data: savedState.data } });
+                    } else {
+                    navigate('/'); // Default to the main landing page
+                    }
                 }, 1000); // 1-second delay
               } else {
                 throw new Error('Unexpected response status');
@@ -52,7 +71,7 @@ function LoginPage() {
     const handleForgotPasswordSubmit = async () => {
         try{
             console.log("forgotPasswordEmail:",forgotPasswordEmail)
-            const response = await axios.post('http://127.0.0.1:5000/forgot-password', { email: forgotPasswordEmail });
+            const response = await axios.post('http://localhost:5000/forgot-password', { email: forgotPasswordEmail });
             console.log("response:",response)
             
             setMessage(response.data.message || 'Password reset email sent successfully.');

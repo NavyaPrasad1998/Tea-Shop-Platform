@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tearoma-frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: tearoma-frontend
+  template:
+    metadata:
+      labels:
+        app: tearoma-frontend
+    spec:
+      containers:
+        - name: tearoma-frontend
+          image: gcr.io/datacenter-project-444513/tearoma-frontend
+          ports:
+            - containerPort: 80

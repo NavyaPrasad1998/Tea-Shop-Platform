@@ -4,10 +4,11 @@ import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Box, Typography, Grid } from '@mui/material';
 import axiosInstance from './axiosInstance';
 
-function Collections({ handleCartOpen, cartItems, isLoggedIn, user }) {
-    const { teaType } = useParams(); // Access the tea-type parameter from the route
-    const location = useLocation(); // Access the state passed via navigate
-    const data = location.state?.data;
+function Search({ handleCartOpen, cartItems, isLoggedIn, user }) {
+    const location = useLocation();
+    const queryParams = new URLSearchParams(location.search);
+    const query = queryParams.get('q'); // Extract the search query from the URL
+    const data = location.state?.data || []; 
     const navigate = useNavigate();
 
     console.log("data in collections:",data)
@@ -36,7 +37,7 @@ function Collections({ handleCartOpen, cartItems, isLoggedIn, user }) {
         <>
             <HeaderStrip handleCartOpen={handleCartOpen} cartItems={cartItems} isLoggedIn={isLoggedIn} user={user}/>
             <div>
-            <Typography variant="h3" sx={{ textAlign: 'center', marginTop: '20px', color: '#51744B', fontFamily: "Playfair Display", textTransform: 'capitalize' }}>{teaType.replace(/-/g, ' ')}</Typography>
+            <Typography variant="h3" sx={{ textAlign: 'center', marginTop: '20px', color: '#51744B', fontFamily: "Playfair Display" }}>Found <span style={{marginTop: '-5px'}}>{data.length}</span> items for your search "{query.replace('+', ' ')}"</Typography>
             <Grid container spacing={3} sx={{ marginTop: '20px', padding: '0 20px' }}>
                 {data && data.length > 0 ? (
                 data.map((item) => (
@@ -70,7 +71,7 @@ function Collections({ handleCartOpen, cartItems, isLoggedIn, user }) {
                 ))
                 ) : (
                 <Typography variant="body1" sx={{ textAlign: 'center', width: '100%' }}>
-                    No products found for this category.
+                    No products found for "{query.replace('+', ' ')}".
                 </Typography>
                 )}
             </Grid>
@@ -80,4 +81,4 @@ function Collections({ handleCartOpen, cartItems, isLoggedIn, user }) {
     );
 };
 
-export default Collections;
+export default Search;

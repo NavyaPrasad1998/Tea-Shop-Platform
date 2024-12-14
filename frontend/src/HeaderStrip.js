@@ -1,42 +1,61 @@
 import React, {useState} from 'react';
-import { IconButton, Box, Paper, TextField, Typography } from '@mui/material';
+import { IconButton, Box, Paper, TextField, Typography, Badge, MenuItem, Menu, Tooltip } from '@mui/material';
 import { GoSearch } from "react-icons/go";
 import { FaRegUser } from "react-icons/fa";
 import { FaCartShopping } from "react-icons/fa6";
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useNavigate, useLocation } from 'react-router-dom';
+import MenuList from './MenuList';
+import axiosInstance from './axiosInstance';
 
-function HeaderStrip(){
-    const [showDropdown, setShowDropdown] = useState(false);
+function HeaderStrip({handleCartOpen, cartItems = [], isLoggedIn, user }){
     const [searchQuery, setSearchQuery] = useState('');
-    const [isLoggedIn, setLoggedIn] = useState(false)
+    
     const navigate = useNavigate();
+    const location = useLocation();
 
-    const handleMouseEnter = () => {
-        setShowDropdown(true);
-    };
+    // console.log("cartItems",cartItems)
 
-    const handleMouseLeave = () => {
-        setShowDropdown(false);
-    };
+    // Ensure itemCount is 0 for empty or undefined cartItems
+    const itemCount = Array.isArray(cartItems)
+    ? cartItems.reduce((total, item) => total + item.quantity, 0)
+    : 0;
 
-    const handleLogin = () => {
-        if(isLoggedIn){
-            navigate('/profile')
-        }else{
-            navigate('/account/login')
+    const handleUserIconClick = (event) => {
+        if (!isLoggedIn) {
+         // Save the current location and state to sessionStorage
+          const stateToSave = {
+            from: `${location.pathname}${location.search}`,
+            data: location.state?.data || null, // Save the necessary data
+          };
+          sessionStorage.setItem('redirectState', JSON.stringify(stateToSave));
+      
+          // Navigate to the login page
+          navigate('/account/login');
+        } else {
+          // Open the menu for logged-in users
+          navigate('/account/profile');
         }
-    }
-
+    };
+    
 
     const handleSearch = async () => {
-        try {
-            const encodedQuery = encodeURIComponent(searchQuery); // Encode the query for URL
-            const response = await axios.get(`http://127.0.0.1:5000/search?q=${encodedQuery}`);
-            console.log('Search Results:', response.data); // Process the search results
-        } catch (error) {
-            console.error('Error during search:', error);
-        }
+            const formattedCategory = searchQuery.toLowerCase().replace(/\s+/g, '+');
+            try {
+                // Make an API call to fetch data for the selected category
+                const response = await axiosInstance.get(`/search?q=${formattedCategory}`);
+                
+                // console.log("response:",response)
+                // Ensure the data is always an array
+                const data = Array.isArray(response.data) ? response.data : [response.data];
+    
+                // Navigate to /collections/{category} with the API response data
+                navigate(`/search?q=${formattedCategory}`, { state: { data } });
+            } catch (error) {
+                if (error.response?.status === 404){
+                    navigate(`/search?q=${formattedCategory}`, { state: { data: [] } });
+                }
+                console.error(`Error fetching data for category ${searchQuery}:`, error);
+            }
     }
 
 
@@ -50,7 +69,7 @@ function HeaderStrip(){
             {/* Logo, Menu, and Icons Strip */}
             <Box className='header-strip'>
                 {/* Logo */}
-                <Box className="logo" sx={{ fontWeight: 'bold', fontSize: '18px' }}>
+                <Box className="logo" sx={{ fontWeight: 'bold', fontSize: '18px', width: '500px' }}>
                     <img 
                         src="/images/logo-transparent-png.png" alt="Logo" 
                         style={{ height: '200px', width: 'auto', marginLeft: '-100px', cursor: 'pointer' }}
@@ -75,7 +94,7 @@ function HeaderStrip(){
                         },
                     }}
                     sx={{
-                        maxWidth: '500px',
+                        maxWidth: '600px',
                         marginLeft: '-100px'
                     }}
                 />
@@ -83,137 +102,37 @@ function HeaderStrip(){
 
                 {/* Icons */}
                 <Box className="icons">
-                    <IconButton onClick={handleLogin}>
-                        <FaRegUser />
-                    </IconButton>
-                    <IconButton>
-                        <FaCartShopping />
+                    {/* Tooltip with dynamic content */}
+                    <Tooltip  
+                        title={
+                            isLoggedIn ? (
+                            <div style={{ fontSize: '16px', textAlign: 'center' }}>
+                                Hi, {user.name}!
+                                <br />
+                                Click to view your Profile
+                            </div>
+                            ) : (
+                            <div style={{ fontSize: '16px', textAlign: 'center' }}>
+                                Hey, Tea Lover!
+                                <br />
+                                Click to Login / Sign Up
+                            </div>
+                            )
+                        }
+                        placement="top"
+                        >
+                        <IconButton onClick={handleUserIconClick}>
+                            <FaRegUser />
+                        </IconButton>
+                    </Tooltip>
+                    <IconButton onClick={handleCartOpen}>
+                        <Badge badgeContent={itemCount} color="secondary">
+                            <FaCartShopping />
+                        </Badge>
                     </IconButton>
                 </Box>
             </Box>
-
-            {/* Menu Items */}
-            <div style={{padding: '8px'}}>
-            <Box
-                    sx={{
-                        display: 'flex',
-                        gap: '40px',
-                        flex: '1',
-                        justifyContent: 'center',
-                    }}
-                >
-                    {/* Hoverable Wrapper */}
-                    <Box
-                        onMouseEnter={handleMouseEnter}
-                        onMouseLeave={handleMouseLeave}
-                        sx={{
-                            position: 'relative',
-                        }}
-                    >
-                        {/* Tea Menu Item */}
-                        <Box
-                            sx={{
-                                paddingBottom: '5px',
-                                borderBottom: showDropdown ? '2px solid #954535' : '2px solid transparent',
-                                color: showDropdown ? '#954535' : 'inherit',
-                                cursor: 'pointer',
-                                '&:hover': {
-                                    color: '#954535',
-                                    borderBottom: '2px solid #954535',
-                                },
-                            }}
-                        >
-                            Tea
-                        </Box>
-
-                        {/* Invisible Hoverable Gap */}
-                        {showDropdown && (
-                            <Box
-                                sx={{
-                                    position: 'absolute',
-                                    top: '100%',
-                                    left: '-50px', // Extend the gap area to the left
-                                    width: 'calc(100% + 100px)', // Extend the gap area to the right
-                                    height: '50px', // Matches the gap (50% of `top`)
-                                    backgroundColor: 'transparent', // Invisible hoverable area
-                                }}
-                            ></Box>
-                        )}
-
-                        {/* Dropdown */}
-                        {showDropdown && (
-                            <Paper
-                            elevation={4}
-                            className="dropdown-container"
-                        >
-                            <Box className="dropdown-content">
-                                {/* Row for Headings and Content */}
-                                <Box className="dropdown-row">
-                                    {/* Tea by Type Section */}
-                                    <Box className="dropdown-section">
-                                        <Box className="dropdown-heading">Tea by Type</Box>
-                                        <Box className="dropdown-divider"></Box>
-                                        <Box className="dropdown-items">
-                                            <a href="/collections/wellness-tea" className="dropdown-link">Wellness Tea</a>
-                                            <a href="/collections/green-tea" className="dropdown-link">Green Tea</a>
-                                            <a href="/collections/herbal-tea" className="dropdown-link">Herbal Tea</a>
-                                            <a href="/collections/black-tea" className="dropdown-link">Black Tea</a>
-                                            <a href="/collections/white-tea" className="dropdown-link">White Tea</a>
-                                            <a href="/collections/iced-tea" className="dropdown-link">Iced Tea</a>
-                                        </Box>
-                                    </Box>
-                        
-                                    {/* Tea by Concern Section */}
-                                    <Box className="dropdown-section">
-                                        <Box className="dropdown-heading">Tea by Concern</Box>
-                                        <Box className="dropdown-divider"></Box>
-                                        <Box className="dropdown-items">
-                                            <a href="/digestive-health" className="dropdown-link">Digestive Health</a>
-                                            <a href="/weight-loss" className="dropdown-link">Weight Loss</a>
-                                            <a href="/sleep-stress" className="dropdown-link">Sleep & Stress</a>
-                                            <a href="/kickstart-mornings" className="dropdown-link">Kickstart Mornings</a>
-                                            <a href="/body-healing" className="dropdown-link">Body Healing</a>
-                                        </Box>
-                                    </Box>
-                        
-                                    {/* Tea by Flavour Section */}
-                                    <Box className="dropdown-section">
-                                        <Box className="dropdown-heading">Tea by Flavour</Box>
-                                        <Box className="dropdown-divider"></Box>
-                                        <Box className="dropdown-items">
-                                            <a href="/kahwa" className="dropdown-link">Kahwa</a>
-                                            <a href="/mint" className="dropdown-link">Mint</a>
-                                            <a href="/chamomile" className="dropdown-link">Chamomile</a>
-                                            <a href="/floral" className="dropdown-link">Floral</a>
-                                            <a href="/herbal" className="dropdown-link">Herbal</a>
-                                            <a href="/unflavoured" className="dropdown-link">Unflavoured</a>
-                                        </Box>
-                                    </Box>
-                                </Box>
-                            </Box>
-                        </Paper>
-                        )}
-                    </Box>
-
-                    {/* Other Menu Items */}
-                    {['Teaware', 'Snacks', 'Loose Leaves', 'About'].map((item) => (
-                        <Box
-                            key={item}
-                            sx={{
-                                paddingBottom: '5px',
-                                borderBottom: '2px solid transparent',
-                                '&:hover': {
-                                    color: '#954535',
-                                    borderBottom: '2px solid #954535',
-                                    cursor: 'pointer',
-                                },
-                            }}
-                        >
-                            {item}
-                        </Box>
-                    ))}
-                </Box>
-            </div>
+            <MenuList/>
         </div>
     )
 };

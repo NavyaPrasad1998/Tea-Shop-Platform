@@ -2,8 +2,9 @@ import React, {useState} from 'react';
 import { Box, TextField, Button, Typography, Link, Alert } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { Link as RouterLink } from 'react-router-dom';
-import axios from 'axios';
+import axiosInstance from './axiosInstance';
 import './css/LoginPage.css'
+
 
 function RegisterPage() {
     const [formData, setFormData] = useState({
@@ -25,7 +26,7 @@ function RegisterPage() {
     const handleRegister = async () => {
         try {
             console.log("formData:",formData)
-            const response = await axios.post('http://127.0.0.1:5000/register', formData);
+            const response = await axiosInstance.post('/register', formData);
             console.log("response:",response)
             setMessage(response.data.message);
             setError(false);

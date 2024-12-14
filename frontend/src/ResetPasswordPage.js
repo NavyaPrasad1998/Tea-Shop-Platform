@@ -37,7 +37,7 @@ function ResetPasswordPage() {
     
         try {
           // Send API request to reset password with the token
-          const response = await axios.post('http://127.0.0.1:5000/reset-password', {
+          const response = await axios.post('http://localhost:5000/reset-password', {
             token,
             password
           });

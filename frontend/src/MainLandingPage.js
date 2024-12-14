@@ -5,7 +5,7 @@ import BestSellers from './BestSellers';
 
 
 
-function MainLandingPage() {
+function MainLandingPage({handleCartOpen, cartItems, isLoggedIn, user}) {
 
     useEffect(() => {
         // Check if the script is already added
@@ -33,7 +33,7 @@ function MainLandingPage() {
     return (
         <div>
             {/*Header Strip*/}
-            <HeaderStrip/>
+            <HeaderStrip handleCartOpen={handleCartOpen} cartItems={cartItems} isLoggedIn={isLoggedIn} user={user}/>
             {/* Main Content */}
             <main className="main-content">
                 <img src="/images/main-page.jpg" alt="Tea-Cup" style={{ height: '90%', width: '100%' }} />
